@@ -25,11 +25,95 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = BarterHouseMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class SignEditHandler {
     
+    // Mapa de aliases en español -> inglés para búsqueda
+    private static final HashMap<String, String> SEARCH_ALIASES = new HashMap<>();
+    
+    static {
+        // Diamante
+        SEARCH_ALIASES.put("diamante", "diamond");
+        SEARCH_ALIASES.put("diamantes", "diamond");
+        // Oro
+        SEARCH_ALIASES.put("oro", "gold");
+        // Hierro
+        SEARCH_ALIASES.put("hierro", "iron");
+        // Piedra
+        SEARCH_ALIASES.put("piedra", "stone");
+        SEARCH_ALIASES.put("roca", "stone");
+        // Madera
+        SEARCH_ALIASES.put("madera", "wood");
+        // Carbón
+        SEARCH_ALIASES.put("carbon", "coal");
+        SEARCH_ALIASES.put("carbón", "coal");
+        // Esmeralda
+        SEARCH_ALIASES.put("esmeralda", "emerald");
+        SEARCH_ALIASES.put("esmeraldas", "emerald");
+        // Redstone
+        SEARCH_ALIASES.put("piedra roja", "redstone");
+        // Lapis
+        SEARCH_ALIASES.put("lapiz", "lapis");
+        SEARCH_ALIASES.put("lápiz", "lapis");
+        // Cuarzo
+        SEARCH_ALIASES.put("cuarzo", "quartz");
+        // Obsidiana
+        SEARCH_ALIASES.put("obsidiana", "obsidian");
+        // Tierra
+        SEARCH_ALIASES.put("tierra", "dirt");
+        // Césped
+        SEARCH_ALIASES.put("cesped", "grass");
+        SEARCH_ALIASES.put("césped", "grass");
+        SEARCH_ALIASES.put("pasto", "grass");
+        // Arena
+        SEARCH_ALIASES.put("arena", "sand");
+        // Grava
+        SEARCH_ALIASES.put("grava", "gravel");
+        // Cristal
+        SEARCH_ALIASES.put("cristal", "glass");
+        SEARCH_ALIASES.put("vidrio", "glass");
+        // Perla
+        SEARCH_ALIASES.put("perla", "pearl");
+        // Vara
+        SEARCH_ALIASES.put("vara", "rod");
+        // Polvo
+        SEARCH_ALIASES.put("polvo", "dust");
+        // Lingote
+        SEARCH_ALIASES.put("lingote", "ingot");
+        // Pepita
+        SEARCH_ALIASES.put("pepita", "nugget");
+        // Bloque
+        SEARCH_ALIASES.put("bloque", "block");
+        // Espada
+        SEARCH_ALIASES.put("espada", "sword");
+        // Pico
+        SEARCH_ALIASES.put("pico", "pickaxe");
+        // Hacha
+        SEARCH_ALIASES.put("hacha", "axe");
+        // Pala
+        SEARCH_ALIASES.put("pala", "shovel");
+        // Azada
+        SEARCH_ALIASES.put("azada", "hoe");
+        // Armadura
+        SEARCH_ALIASES.put("armadura", "armor");
+        // Casco
+        SEARCH_ALIASES.put("casco", "helmet");
+        // Pechera
+        SEARCH_ALIASES.put("pechera", "chestplate");
+        // Pantalones
+        SEARCH_ALIASES.put("pantalones", "leggings");
+        // Botas
+        SEARCH_ALIASES.put("botas", "boots");
+    }
+    
     // Almacena qué jugadores están editando letreros de búsqueda
     private static final HashMap<UUID, BlockPos> searchingSigns = new HashMap<>();
     
     // Almacena el item que el jugador está ofreciendo (el del slot central)
     private static final HashMap<UUID, ItemStack> offeredItems = new HashMap<>();
+    
+    // Almacena la oferta seleccionada para confirmación
+    private static final HashMap<UUID, com.barterhouse.api.TradeOffer> selectedOffers = new HashMap<>();
+    
+    // Almacena el item seleccionado de búsqueda (antes de especificar cantidad)
+    private static final HashMap<UUID, net.minecraft.world.item.ItemStack> selectedSearchItems = new HashMap<>();
     
     public static void setOfferedItem(UUID playerUUID, ItemStack item) {
         offeredItems.put(playerUUID, item.copy());
@@ -42,6 +126,32 @@ public class SignEditHandler {
     
     public static void clearOfferedItem(UUID playerUUID) {
         offeredItems.remove(playerUUID);
+    }
+    
+    public static void setSelectedOffer(UUID playerUUID, com.barterhouse.api.TradeOffer offer) {
+        selectedOffers.put(playerUUID, offer);
+        LoggerUtil.info("Stored selected offer for player " + playerUUID);
+    }
+    
+    public static com.barterhouse.api.TradeOffer getSelectedOffer(UUID playerUUID) {
+        return selectedOffers.get(playerUUID);
+    }
+    
+    public static void clearSelectedOffer(UUID playerUUID) {
+        selectedOffers.remove(playerUUID);
+    }
+    
+    public static void setSelectedSearchItem(UUID playerUUID, net.minecraft.world.item.ItemStack item) {
+        selectedSearchItems.put(playerUUID, item.copy());
+        LoggerUtil.info("Stored selected search item for player " + playerUUID + ": " + item);
+    }
+    
+    public static net.minecraft.world.item.ItemStack getSelectedSearchItem(UUID playerUUID) {
+        return selectedSearchItems.get(playerUUID);
+    }
+    
+    public static void clearSelectedSearchItem(UUID playerUUID) {
+        selectedSearchItems.remove(playerUUID);
     }
     
     public static void setSearchingSign(UUID playerUUID, BlockPos signPos) {
@@ -105,7 +215,12 @@ public class SignEditHandler {
             return results;
         }
         
-        String lowerSearch = searchTerm.toLowerCase();
+        String lowerSearch = searchTerm.toLowerCase().trim();
+        
+        // Aplicar aliases si existe una traducción
+        String translatedSearch = SEARCH_ALIASES.getOrDefault(lowerSearch, lowerSearch);
+        
+        LoggerUtil.info("Searching for: '" + searchTerm + "' (translated to: '" + translatedSearch + "')");
         
         // Buscar en todos los items registrados
         for (Item item : ForgeRegistries.ITEMS) {
@@ -114,8 +229,23 @@ public class SignEditHandler {
             
             String itemName = itemKey.getPath().toLowerCase();
             
-            // Si el nombre del item contiene el término de búsqueda
-            if (itemName.contains(lowerSearch)) {
+            // Buscar por ID de minecraft (con término original y traducido)
+            if (itemName.contains(lowerSearch) || itemName.contains(translatedSearch)) {
+                results.add(item);
+                continue;
+            }
+            
+            // Buscar en la translation key
+            String translationKey = item.getDescriptionId().toLowerCase();
+            if (translationKey.contains(lowerSearch) || translationKey.contains(translatedSearch)) {
+                results.add(item);
+                continue;
+            }
+            
+            // Buscar en el display name usando ItemStack
+            ItemStack stack = new ItemStack(item);
+            String displayName = stack.getHoverName().getString().toLowerCase();
+            if (displayName.contains(lowerSearch) || displayName.contains(translatedSearch)) {
                 results.add(item);
             }
         }

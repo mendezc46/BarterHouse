@@ -24,20 +24,20 @@ public class TradeOfferManager {
 
     private static TradeOfferManager instance;
     private final Map<UUID, TradeOffer> activeOffers;
-    private final Path dataDirectory;
-    private static final String OFFERS_FILE = "trade_offers.nbt";
+    private Path dataDirectory;
+    private static final String OFFERS_FILE = "offers.json";
 
     private static final int SAVE_INTERVAL = 20 * 60; // Guardar cada 60 segundos (20 ticks * 60)
     private int saveCounter = 0;
+    
+    private Level serverLevel;
 
     /**
      * Constructor privado para el patrón Singleton.
      */
     private TradeOfferManager() {
         this.activeOffers = new HashMap<>();
-        this.dataDirectory = Paths.get("world_data", "barterhouse");
-        initializeDataDirectory();
-        loadOffers();
+        // El directorio se inicializará cuando se tenga acceso al mundo
     }
 
     /**
@@ -51,14 +51,35 @@ public class TradeOfferManager {
         }
         return instance;
     }
+    
+    /**
+     * Inicializa el manager con el nivel del servidor.
+     * Esto debe ser llamado al iniciar el servidor.
+     */
+    public void initializeWithLevel(Level level) {
+        if (this.serverLevel == null && level != null) {
+            this.serverLevel = level;
+            initializeDataDirectory();
+            loadOffers();
+        }
+    }
 
     /**
      * Inicializa el directorio de datos si no existe.
      */
     private void initializeDataDirectory() {
+        if (serverLevel == null) {
+            LoggerUtil.error("Cannot initialize data directory: server level is null");
+            return;
+        }
+        
         try {
+            // Obtener el directorio del mundo del servidor
+            Path worldPath = serverLevel.getServer().getServerDirectory().toPath();
+            // Crear directorio barterhouse dentro de la carpeta del mundo
+            this.dataDirectory = worldPath.resolve("barterhouse");
             Files.createDirectories(dataDirectory);
-            LoggerUtil.info("Data directory initialized at: " + dataDirectory);
+            LoggerUtil.info("Data directory initialized at: " + dataDirectory.toAbsolutePath());
         } catch (IOException e) {
             LoggerUtil.error("Failed to create data directory: " + e.getMessage());
         }
@@ -191,70 +212,194 @@ public class TradeOfferManager {
     }
 
     /**
-     * Guarda todas las ofertas en archivo NBT.
+     * Guarda todas las ofertas en archivo JSON.
      */
     public void saveOffers() {
+        if (dataDirectory == null) {
+            LoggerUtil.error("Cannot save offers: data directory not initialized");
+            return;
+        }
+        
         try {
-            CompoundTag rootTag = new CompoundTag();
-            ListTag offersList = new ListTag();
-
-            for (TradeOffer offer : activeOffers.values()) {
-                offersList.add(offer.serializeNBT());
-            }
-
-            rootTag.put("Offers", offersList);
-
             Path filePath = dataDirectory.resolve(OFFERS_FILE);
-            byte[] data = new byte[0];
             
-            // Serializar CompoundTag a bytes
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            DataOutputStream dos = new DataOutputStream(baos);
-            net.minecraft.nbt.NbtIo.write(rootTag, dos);
-            dos.close();
-            data = baos.toByteArray();
-
-            Files.write(filePath, data);
-            LoggerUtil.debug("Saved " + activeOffers.size() + " trade offers");
+            // Crear JSON manualmente
+            StringBuilder json = new StringBuilder();
+            json.append("{\n");
+            json.append("  \"offers\": [\n");
+            
+            List<TradeOffer> offersList = new ArrayList<>(activeOffers.values());
+            for (int i = 0; i < offersList.size(); i++) {
+                TradeOffer offer = offersList.get(i);
+                json.append("    {\n");
+                json.append("      \"offerId\": \"").append(offer.getOfferId()).append("\",\n");
+                json.append("      \"creatorUUID\": \"").append(offer.getCreatorUUID()).append("\",\n");
+                json.append("      \"creatorName\": \"").append(offer.getCreatorName()).append("\",\n");
+                json.append("      \"offeredItem\": \"").append(offer.getOfferedItem().getItem().toString()).append("\",\n");
+                json.append("      \"offeredCount\": ").append(offer.getOfferedItem().getCount()).append(",\n");
+                json.append("      \"requestedItem\": \"").append(offer.getRequestedItem().getItem().toString()).append("\",\n");
+                json.append("      \"requestedCount\": ").append(offer.getRequestedItem().getCount()).append(",\n");
+                json.append("      \"createdTime\": ").append(offer.getCreatedTime()).append("\n");
+                json.append("    }");
+                if (i < offersList.size() - 1) {
+                    json.append(",");
+                }
+                json.append("\n");
+            }
+            
+            json.append("  ]\n");
+            json.append("}\n");
+            
+            Files.write(filePath, json.toString().getBytes(StandardCharsets.UTF_8));
+            LoggerUtil.info("Saved " + activeOffers.size() + " trade offers to " + filePath.toAbsolutePath());
         } catch (IOException e) {
             LoggerUtil.error("Failed to save trade offers: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
     /**
-     * Carga todas las ofertas desde archivo NBT.
+     * Carga todas las ofertas desde archivo JSON usando NBT como respaldo.
      */
     public void loadOffers() {
+        if (dataDirectory == null) {
+            LoggerUtil.info("Data directory not initialized yet, offers will be loaded later");
+            return;
+        }
+        
         try {
-            Path filePath = dataDirectory.resolve(OFFERS_FILE);
-            if (!Files.exists(filePath)) {
-                LoggerUtil.info("No previous trade offers found");
+            Path jsonPath = dataDirectory.resolve(OFFERS_FILE);
+            Path nbtPath = dataDirectory.resolve("trade_offers.nbt");
+            
+            // Intentar cargar desde JSON primero
+            if (Files.exists(jsonPath)) {
+                loadFromJson(jsonPath);
                 return;
             }
-
-            byte[] data = Files.readAllBytes(filePath);
-            ByteArrayInputStream bais = new ByteArrayInputStream(data);
-            DataInputStream dis = new DataInputStream(bais);
-            CompoundTag rootTag = net.minecraft.nbt.NbtIo.read(dis);
-            dis.close();
-
-            if (rootTag != null && rootTag.contains("Offers")) {
-                ListTag offersList = rootTag.getList("Offers", Tag.TAG_COMPOUND);
-                
-                for (int i = 0; i < offersList.size(); i++) {
-                    CompoundTag offerTag = offersList.getCompound(i);
-                    TradeOffer offer = TradeOffer.deserializeNBT(offerTag);
-                    
-                    // Solo cargar si no ha expirado
-                    if (!offer.isExpired()) {
-                        activeOffers.put(offer.getOfferId(), offer);
-                    }
-                }
-                
-                LoggerUtil.info("Loaded " + activeOffers.size() + " trade offers");
+            
+            // Si no existe JSON, intentar migrar desde NBT
+            if (Files.exists(nbtPath)) {
+                LoggerUtil.info("Migrating from NBT format to JSON...");
+                loadFromNBT(nbtPath);
+                // Guardar en formato JSON
+                saveOffers();
+                // Eliminar archivo NBT viejo
+                Files.delete(nbtPath);
+                LoggerUtil.info("Migration completed");
+                return;
             }
-        } catch (IOException e) {
+            
+            LoggerUtil.info("No previous trade offers found");
+        } catch (Exception e) {
             LoggerUtil.error("Failed to load trade offers: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private void loadFromJson(Path filePath) throws IOException {
+        String content = new String(Files.readAllBytes(filePath), StandardCharsets.UTF_8);
+        
+        // Parse JSON manualmente (simple)
+        String[] lines = content.split("\n");
+        UUID currentOfferId = null;
+        UUID currentCreatorUUID = null;
+        String currentCreatorName = null;
+        String currentOfferedItem = null;
+        int currentOfferedCount = 1;
+        String currentRequestedItem = null;
+        int currentRequestedCount = 1;
+        long currentCreatedTime = 0;
+        
+        for (String line : lines) {
+            line = line.trim();
+            
+            if (line.contains("\"offerId\"")) {
+                String value = extractJsonValue(line);
+                currentOfferId = UUID.fromString(value);
+            } else if (line.contains("\"creatorUUID\"")) {
+                String value = extractJsonValue(line);
+                currentCreatorUUID = UUID.fromString(value);
+            } else if (line.contains("\"creatorName\"")) {
+                currentCreatorName = extractJsonValue(line);
+            } else if (line.contains("\"offeredItem\"")) {
+                currentOfferedItem = extractJsonValue(line);
+            } else if (line.contains("\"offeredCount\"")) {
+                currentOfferedCount = Integer.parseInt(extractJsonValue(line));
+            } else if (line.contains("\"requestedItem\"")) {
+                currentRequestedItem = extractJsonValue(line);
+            } else if (line.contains("\"requestedCount\"")) {
+                currentRequestedCount = Integer.parseInt(extractJsonValue(line));
+            } else if (line.contains("\"createdTime\"")) {
+                currentCreatedTime = Long.parseLong(extractJsonValue(line));
+                
+                // Crear oferta cuando tenemos todos los datos
+                if (currentOfferId != null && currentCreatorUUID != null && currentOfferedItem != null && currentRequestedItem != null) {
+                    try {
+                        net.minecraft.world.item.Item offeredItemObj = net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(new net.minecraft.resources.ResourceLocation(currentOfferedItem));
+                        net.minecraft.world.item.Item requestedItemObj = net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(new net.minecraft.resources.ResourceLocation(currentRequestedItem));
+                        
+                        if (offeredItemObj != null && requestedItemObj != null) {
+                            net.minecraft.world.item.ItemStack offeredStack = new net.minecraft.world.item.ItemStack(offeredItemObj, currentOfferedCount);
+                            net.minecraft.world.item.ItemStack requestedStack = new net.minecraft.world.item.ItemStack(requestedItemObj, currentRequestedCount);
+                            
+                            TradeOffer offer = new TradeOffer(currentOfferId, currentCreatorUUID, currentCreatorName, offeredStack, requestedStack, currentCreatedTime);
+                            
+                            if (!offer.isExpired()) {
+                                activeOffers.put(currentOfferId, offer);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LoggerUtil.error("Failed to load offer " + currentOfferId + ": " + e.getMessage());
+                    }
+                    
+                    // Reset para la siguiente oferta
+                    currentOfferId = null;
+                    currentCreatorUUID = null;
+                    currentCreatorName = null;
+                    currentOfferedItem = null;
+                    currentOfferedCount = 1;
+                    currentRequestedItem = null;
+                    currentRequestedCount = 1;
+                    currentCreatedTime = 0;
+                }
+            }
+        }
+        
+        LoggerUtil.info("Loaded " + activeOffers.size() + " trade offers from JSON");
+    }
+    
+    private String extractJsonValue(String line) {
+        // Extrae el valor de "key": "value" o "key": value
+        int colonIndex = line.indexOf(":");
+        if (colonIndex == -1) return "";
+        
+        String value = line.substring(colonIndex + 1).trim();
+        // Remover comas y comillas
+        value = value.replace(",", "").replace("\"", "").trim();
+        return value;
+    }
+    
+    private void loadFromNBT(Path filePath) throws IOException {
+        byte[] data = Files.readAllBytes(filePath);
+        ByteArrayInputStream bais = new ByteArrayInputStream(data);
+        DataInputStream dis = new DataInputStream(bais);
+        CompoundTag rootTag = net.minecraft.nbt.NbtIo.read(dis);
+        dis.close();
+
+        if (rootTag != null && rootTag.contains("Offers")) {
+            ListTag offersList = rootTag.getList("Offers", Tag.TAG_COMPOUND);
+            
+            for (int i = 0; i < offersList.size(); i++) {
+                CompoundTag offerTag = offersList.getCompound(i);
+                TradeOffer offer = TradeOffer.deserializeNBT(offerTag);
+                
+                // Solo cargar si no ha expirado
+                if (!offer.isExpired()) {
+                    activeOffers.put(offer.getOfferId(), offer);
+                }
+            }
+            
+            LoggerUtil.info("Loaded " + activeOffers.size() + " trade offers from NBT");
         }
     }
 

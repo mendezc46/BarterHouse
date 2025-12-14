@@ -36,6 +36,25 @@ public class TradeOffer {
         this.requestedItem = requestedItem.copy();
         this.creationTime = System.currentTimeMillis();
     }
+    
+    /**
+     * Constructor para cargar una oferta existente con tiempo de creación específico.
+     *
+     * @param offerId UUID único de la oferta
+     * @param creatorUUID UUID del jugador que crea la oferta
+     * @param creatorName Nombre del jugador que crea la oferta
+     * @param offeredItem Item que se ofrece
+     * @param requestedItem Item que se solicita
+     * @param creationTime Tiempo de creación en milisegundos
+     */
+    public TradeOffer(UUID offerId, UUID creatorUUID, String creatorName, ItemStack offeredItem, ItemStack requestedItem, long creationTime) {
+        this.offerId = offerId;
+        this.creatorUUID = creatorUUID;
+        this.creatorName = creatorName;
+        this.offeredItem = offeredItem.copy();
+        this.requestedItem = requestedItem.copy();
+        this.creationTime = creationTime;
+    }
 
     // Getters
     public UUID getOfferId() {
@@ -59,6 +78,10 @@ public class TradeOffer {
     }
 
     public long getCreationTime() {
+        return creationTime;
+    }
+    
+    public long getCreatedTime() {
         return creationTime;
     }
 

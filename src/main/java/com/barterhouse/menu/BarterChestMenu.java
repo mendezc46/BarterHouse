@@ -1,6 +1,7 @@
 package com.barterhouse.menu;
 
 import com.barterhouse.commands.BarterUIManager;
+import com.barterhouse.config.MessageConfig;
 import com.barterhouse.util.LoggerUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
@@ -48,6 +49,15 @@ public class BarterChestMenu extends ChestMenu {
                 player.closeContainer();
                 player.getServer().execute(() -> BarterUIManager.openDeleteMyOffersGUI(player));
                 return; // Cancelar el click
+            } else if (slotId < 36) {
+                // Click en una oferta (primeras 4 filas)
+                ItemStack clickedItem = this.getSlot(slotId).getItem();
+                if (!clickedItem.isEmpty()) {
+                    LoggerUtil.info("Player clicked on offer at slot " + slotId);
+                    player.closeContainer();
+                    player.getServer().execute(() -> openOfferConfirmationMenu((ServerPlayer) player, slotId));
+                    return; // Cancelar click
+                }
             }
         } else if (menuType.equals("delete")) {
             if (slotId == 45) {
@@ -88,8 +98,25 @@ public class BarterChestMenu extends ChestMenu {
                 slotId == 21 || slotId == 22 || slotId == 23 || slotId == 18) {
                 return; // Cancelar click
             }
+        } else if (menuType.equals("confirm_offer")) {
+            if (slotId == 10) {
+                // Botón Aceptar
+                LoggerUtil.info("Player accepted offer");
+                player.closeContainer();
+                player.getServer().execute(() -> acceptOffer((ServerPlayer) player));
+                return;
+            } else if (slotId == 16) {
+                // Botón Cancelar
+                LoggerUtil.info("Player cancelled offer");
+                player.closeContainer();
+                com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
+                player.getServer().execute(() -> BarterUIManager.openOffersListGUI(player));
+                return;
+            }
+            // Bloquear otros clicks
+            return;
         } else if (menuType.equals("search_results")) {
-            // Click en el menú de resultados - crear oferta
+            // Click en el menú de resultados - abrir menú de cantidad
             ItemStack clickedItem = this.getSlot(slotId).getItem();
             
             if (clickedItem.isEmpty()) {
@@ -98,20 +125,71 @@ public class BarterChestMenu extends ChestMenu {
             
             LoggerUtil.info("Player clicked on item: " + clickedItem + " in search results");
             
-            // Obtener el item ofrecido guardado
-            ItemStack offeredItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
+            // Guardar el item seleccionado
+            com.barterhouse.event.SignEditHandler.setSelectedSearchItem(player.getUUID(), clickedItem);
             
-            if (offeredItem == null || offeredItem.isEmpty()) {
-                player.displayClientMessage(Component.literal("§cError: No se encontró el item ofrecido"), true);
-                player.closeContainer();
+            // Abrir menú de cantidad
+            player.closeContainer();
+            ServerPlayer serverPlayer = (ServerPlayer) player;
+            serverPlayer.getServer().execute(() -> openQuantitySelectionMenu(serverPlayer, clickedItem));
+            return; // Cancelar click
+        } else if (menuType.equals("quantity_selection")) {
+            // Click en menú de selección de cantidad
+            // Los slots 0-8 representan cantidades 1-9
+            // Slot 9 es cancelar
+            
+            ItemStack clickedItem = this.getSlot(slotId).getItem();
+            
+            if (clickedItem.isEmpty()) {
                 return;
             }
             
-            // Crear la oferta
-            player.closeContainer();
-            ServerPlayer serverPlayer = (ServerPlayer) player;
-            serverPlayer.getServer().execute(() -> createOffer(serverPlayer, offeredItem, clickedItem));
-            return; // Cancelar click
+            if (slotId == 9) {
+                // Botón Cancelar
+                LoggerUtil.info("Player cancelled quantity selection");
+                player.closeContainer();
+                ServerPlayer serverPlayer = (ServerPlayer) player;
+                com.barterhouse.event.SignEditHandler.clearSelectedSearchItem(player.getUUID());
+                serverPlayer.getServer().execute(() -> BarterUIManager.openCreateOfferGUI(serverPlayer));
+                return;
+            }
+            
+            if (slotId >= 0 && slotId <= 8) {
+                // Cantidad seleccionada (slot 0 = 1, slot 1 = 2, ... slot 8 = 9)
+                int quantity = slotId + 1;
+                
+                LoggerUtil.info("Player selected quantity: " + quantity);
+                
+                // Obtener el item ofrecido guardado
+                ItemStack offeredItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
+                
+                if (offeredItem == null || offeredItem.isEmpty()) {
+                    player.displayClientMessage(Component.literal(MessageConfig.getInstance().get("errors.offered_item_error")), true);
+                    player.closeContainer();
+                    return;
+                }
+                
+                // Obtener el item solicitado
+                ItemStack requestedItem = com.barterhouse.event.SignEditHandler.getSelectedSearchItem(player.getUUID());
+                
+                if (requestedItem == null || requestedItem.isEmpty()) {
+                    player.displayClientMessage(Component.literal(MessageConfig.getInstance().get("errors.requested_item_error")), true);
+                    player.closeContainer();
+                    return;
+                }
+                
+                // Establecer la cantidad del item solicitado
+                requestedItem.setCount(quantity);
+                
+                // Crear la oferta
+                player.closeContainer();
+                ServerPlayer serverPlayer = (ServerPlayer) player;
+                serverPlayer.getServer().execute(() -> createOffer(serverPlayer, offeredItem, requestedItem));
+                com.barterhouse.event.SignEditHandler.clearSelectedSearchItem(player.getUUID());
+                return;
+            }
+            
+            return;
         }
         
         // Para cualquier otro slot, comportamiento normal
@@ -167,6 +245,218 @@ public class BarterChestMenu extends ChestMenu {
             player.openTextEdit(signEntity);
             
             LoggerUtil.info("Sign editor opened at " + signPos);
+        }
+    }
+    
+    private void openQuantitySelectionMenu(ServerPlayer player, ItemStack selectedItem) {
+        // Crear menú de 1 fila (9 slots) para seleccionar cantidad 1-9
+        net.minecraft.world.SimpleContainer container = new net.minecraft.world.SimpleContainer(18);
+        
+        MessageConfig config = MessageConfig.getInstance();
+        
+        // Slots 0-8: cantidades 1-9
+        for (int i = 0; i < 9; i++) {
+            ItemStack quantityButton = new ItemStack(Items.WHITE_CONCRETE);
+            int quantity = i + 1;
+            quantityButton.setCount(quantity);
+            quantityButton.setHoverName(Component.literal("§e§lCantidad: " + quantity + "x"));
+            container.setItem(i, quantityButton);
+        }
+        
+        // Slot 9: Botón Cancelar
+        ItemStack cancelButton = new ItemStack(Items.RED_CONCRETE);
+        cancelButton.setHoverName(Component.literal(config.get("buttons.cancel")));
+        container.setItem(9, cancelButton);
+        
+        BarterUIManager.putPlayerMenu(player.getUUID(), "quantity_selection");
+        
+        player.openMenu(new net.minecraft.world.SimpleMenuProvider(
+            (windowId, playerInventory, playerEntity) -> 
+                new BarterChestMenu(
+                    net.minecraft.world.inventory.MenuType.GENERIC_9x2,
+                    windowId,
+                    playerInventory,
+                    container,
+                    2,
+                    player,
+                    "quantity_selection"
+                ),
+            Component.literal(config.get("menu.quantity_title"))
+        ));
+    }
+    
+    private void openOfferConfirmationMenu(ServerPlayer player, int offerSlot) {
+        MessageConfig config = MessageConfig.getInstance();
+        
+        // Obtener la lista de ofertas activas
+        java.util.List<com.barterhouse.api.TradeOffer> allOffers = 
+            com.barterhouse.manager.TradeOfferManager.getInstance().getAllActiveOffers();
+        
+        if (offerSlot >= allOffers.size()) {
+            player.displayClientMessage(Component.literal(config.get("errors.offer_not_found")), true);
+            return;
+        }
+        
+        com.barterhouse.api.TradeOffer offer = allOffers.get(offerSlot);
+        
+        // Guardar temporalmente la oferta seleccionada
+        com.barterhouse.event.SignEditHandler.setSelectedOffer(player.getUUID(), offer);
+        
+        // Crear menú de 2 filas para confirmación
+        net.minecraft.world.SimpleContainer container = new net.minecraft.world.SimpleContainer(18);
+        
+        // Información sobre lo que obtendrás
+        ItemStack offeredItemDisplay = offer.getOfferedItem().copy();
+        offeredItemDisplay.setCount(1);
+        container.setItem(3, offeredItemDisplay);
+        
+        ItemStack requestedItemDisplay = offer.getRequestedItem().copy();
+        requestedItemDisplay.setCount(1);
+        container.setItem(5, requestedItemDisplay);
+        
+        // Botón Aceptar (Verde)
+        ItemStack acceptButton = new ItemStack(Items.GREEN_CONCRETE);
+        acceptButton.setHoverName(Component.literal(config.get("buttons.accept")));
+        container.setItem(10, acceptButton);
+        
+        // Botón Cancelar (Rojo)
+        ItemStack cancelButton = new ItemStack(Items.RED_CONCRETE);
+        cancelButton.setHoverName(Component.literal(config.get("buttons.cancel")));
+        container.setItem(16, cancelButton);
+        
+        BarterUIManager.putPlayerMenu(player.getUUID(), "confirm_offer");
+        
+        player.openMenu(new net.minecraft.world.SimpleMenuProvider(
+            (windowId, playerInventory, playerEntity) -> 
+                new BarterChestMenu(
+                    net.minecraft.world.inventory.MenuType.GENERIC_9x2,
+                    windowId,
+                    playerInventory,
+                    container,
+                    2,
+                    player,
+                    "confirm_offer"
+                ),
+            Component.literal(config.get("menu.confirm_title"))
+        ));
+    }
+    
+    private void acceptOffer(ServerPlayer player) {
+        try {
+            MessageConfig config = MessageConfig.getInstance();
+            
+            // Obtener la oferta guardada
+            com.barterhouse.api.TradeOffer offer = com.barterhouse.event.SignEditHandler.getSelectedOffer(player.getUUID());
+            
+            if (offer == null) {
+                player.displayClientMessage(Component.literal(config.get("errors.offer_not_found")), true);
+                BarterUIManager.openOffersListGUI(player);
+                return;
+            }
+            
+            // Obtener el item que el jugador necesita tener
+            ItemStack requiredItem = offer.getRequestedItem().copy();
+            
+            // Verificar que el jugador tiene el item
+            int itemCount = 0;
+            for (ItemStack stack : player.getInventory().items) {
+                if (!stack.isEmpty() && stack.sameItem(requiredItem)) {
+                    itemCount += stack.getCount();
+                }
+            }
+            
+            // También verificar en el cursor del jugador
+            ItemStack cursorItem = player.containerMenu.getCarried();
+            if (!cursorItem.isEmpty() && cursorItem.sameItem(requiredItem)) {
+                itemCount += cursorItem.getCount();
+            }
+            
+            int required = requiredItem.getCount();
+            
+            if (itemCount < required) {
+                // Cerrar menú primero
+                player.closeContainer();
+                
+                // Mensajes claros en el chat (no en action bar)
+                String itemName = requiredItem.getDisplayName().getString();
+                String separator = config.get("errors.insufficient_items_separator");
+                
+                player.sendSystemMessage(Component.literal(""));
+                player.sendSystemMessage(Component.literal("§c" + separator));
+                player.sendSystemMessage(Component.literal(config.get("errors.insufficient_items_title")));
+                player.sendSystemMessage(Component.literal(""));
+                player.sendSystemMessage(Component.literal(config.get("errors.insufficient_items_item", "item", itemName)));
+                player.sendSystemMessage(Component.literal(config.get("errors.insufficient_items_required", "required", required)));
+                player.sendSystemMessage(Component.literal(config.get("errors.insufficient_items_have", "have", itemCount)));
+                player.sendSystemMessage(Component.literal(config.get("errors.insufficient_items_missing", "missing", (required - itemCount), "item", itemName)));
+                player.sendSystemMessage(Component.literal(""));
+                player.sendSystemMessage(Component.literal("§c" + separator));
+                player.sendSystemMessage(Component.literal(""));
+                
+                com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
+                
+                // Volver al menú después de un pequeño delay
+                player.getServer().execute(() -> {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    BarterUIManager.openOffersListGUI(player);
+                });
+                return;
+            }
+            
+            // Remover el item requerido del inventario
+            ItemStack toRemove = requiredItem.copy();
+            int remaining = toRemove.getCount();
+            
+            for (int i = 0; i < player.getInventory().items.size() && remaining > 0; i++) {
+                ItemStack stack = player.getInventory().items.get(i);
+                if (!stack.isEmpty() && stack.sameItem(toRemove)) {
+                    int taken = Math.min(stack.getCount(), remaining);
+                    stack.shrink(taken);
+                    remaining -= taken;
+                }
+            }
+            
+            // Si aún queda, remover del cursor
+            if (remaining > 0 && !cursorItem.isEmpty() && cursorItem.sameItem(toRemove)) {
+                int taken = Math.min(cursorItem.getCount(), remaining);
+                cursorItem.shrink(taken);
+                remaining -= taken;
+            }
+            
+            // Dar el item ofrecido
+            ItemStack offeredItem = offer.getOfferedItem().copy();
+            boolean added = player.addItem(offeredItem);
+            
+            if (!added) {
+                // Si el inventario está lleno, dropear el item
+                player.drop(offeredItem, false);
+                player.sendSystemMessage(Component.literal(config.get("success.inventory_full")));
+            }
+            
+            // Registrar la transacción (marcar la oferta como aceptada o eliminarla)
+            com.barterhouse.manager.TradeOfferManager.getInstance().removeOffer(offer.getOfferId());
+            
+            // Limpiar la oferta guardada
+            com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
+            
+            // Mensajes de confirmación
+            player.sendSystemMessage(Component.literal(config.get("success.offer_accepted")));
+            player.sendSystemMessage(Component.literal(config.get("success.offer_received", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
+            
+            LoggerUtil.info("Offer " + offer.getOfferId() + " accepted by player " + player.getName().getString());
+            
+            // Volver al menú principal
+            BarterUIManager.openOffersListGUI(player);
+            
+        } catch (Exception e) {
+            LoggerUtil.error("Error accepting offer: " + e.getMessage());
+            e.printStackTrace();
+            MessageConfig configErr = MessageConfig.getInstance();
+            player.displayClientMessage(Component.literal(configErr.get("errors.accept_error")), true);
         }
     }
 }

@@ -1,9 +1,11 @@
 package com.barterhouse;
 
 import com.barterhouse.commands.CommandRegistry;
+import com.barterhouse.config.MessageConfig;
 import com.barterhouse.manager.TradeOfferManager;
 import com.barterhouse.util.LoggerUtil;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -59,9 +61,29 @@ public class BarterHouseMod {
         @SubscribeEvent
         public static void onServerStarting(ServerStartingEvent event) {
             LoggerUtil.info(MOD_NAME + " server starting");
-            TradeOfferManager.getInstance().reload();
-            LoggerUtil.info("Trade offer manager initialized with " + 
-                           TradeOfferManager.getInstance().getTotalActiveOffers() + " offers");
+        }
+        
+        /**
+         * Se ejecuta cuando el servidor ha iniciado completamente.
+         */
+        @SubscribeEvent
+        public static void onServerStarted(ServerStartedEvent event) {
+            LoggerUtil.info(MOD_NAME + " server started, initializing managers");
+            
+            // Obtener el overworld para inicializar los directorios de datos
+            net.minecraft.server.level.ServerLevel overworld = event.getServer().getLevel(net.minecraft.world.level.Level.OVERWORLD);
+            
+            if (overworld != null) {
+                // Inicializar MessageConfig
+                MessageConfig.getInstance().initializeWithLevel(overworld);
+                
+                // Inicializar TradeOfferManager
+                TradeOfferManager.getInstance().initializeWithLevel(overworld);
+                LoggerUtil.info("Trade offer manager initialized with " + 
+                               TradeOfferManager.getInstance().getTotalActiveOffers() + " offers");
+            } else {
+                LoggerUtil.error("Failed to get overworld level for manager initialization");
+            }
         }
 
         /**

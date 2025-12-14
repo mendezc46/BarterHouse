@@ -2,6 +2,7 @@ plugins {
     id 'eclipse'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '5.1.+'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 group = 'com.barterhouse'
@@ -67,6 +68,7 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 dependencies {
     minecraft 'net.minecraftforge:forge:1.19.2-43.2.14'
+    shadow 'org.yaml:snakeyaml:2.0'
 }
 
 jar {
@@ -83,6 +85,15 @@ jar {
     }
 }
 
+shadowJar {
+    relocate 'org.yaml.snakeyaml', 'com.barterhouse.lib.snakeyaml'
+    configurations = [project.configurations.shadow]
+    classifier = ''
+    finalizedBy('reobfJar')
+}
+
+// Reemplaza el jar normal con el shadowJar
+tasks.build.dependsOn shadowJar
 jar.finalizedBy('reobfJar')
 
 publishing {
