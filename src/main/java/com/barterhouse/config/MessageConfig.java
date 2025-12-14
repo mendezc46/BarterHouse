@@ -73,6 +73,7 @@ public class MessageConfig {
             "  search_title: \"§7Resultados de Búsqueda\"\n" +
             "  quantity_title: \"§7Selecciona la cantidad\"\n" +
             "  confirm_title: \"§7Confirmar Oferta\"\n" +
+            "  confirm_delete_title: \"§c§l¿ELIMINAR OFERTA?\"\n" +
             "\n" +
             "buttons:\n" +
             "  create: \"§a§lCREAR\"\n" +
@@ -80,6 +81,8 @@ public class MessageConfig {
             "  accept: \"§a§lACEPTAR\"\n" +
             "  cancel: \"§c§lCANCELAR\"\n" +
             "  back: \"§e§lVOLVER\"\n" +
+            "  confirm_yes: \"§a§l✔ SÍ, ELIMINAR\"\n" +
+            "  confirm_no: \"§c§l✖ NO, CANCELAR\"\n" +
             "\n" +
             "errors:\n" +
             "  offer_not_found: \"§cOferta no encontrada\"\n" +
@@ -95,12 +98,15 @@ public class MessageConfig {
             "  insufficient_items_have: \"§7Cantidad que tienes: §c{have}\"\n" +
             "  insufficient_items_missing: \"§7Te faltan: §c§l{missing}x {item}\"\n" +
             "  accept_error: \"§cError al aceptar oferta\"\n" +
+            "  delete_error: \"§cError al eliminar oferta\"\n" +
+            "  not_owner: \"§c¡No eres el dueño de esta oferta!\"\n" +
             "\n" +
             "success:\n" +
             "  offer_created: \"§a¡Oferta creada exitosamente!\"\n" +
             "  offer_accepted: \"§a§l¡Oferta aceptada!\"\n" +
             "  offer_received: \"§7Has recibido: §e{count}x {item}\"\n" +
             "  offer_deleted: \"§a¡Oferta eliminada!\"\n" +
+            "  item_returned: \"§7Item devuelto: §e{count}x {item}\"\n" +
             "  inventory_full: \"§eInventario lleno, item dropeado en el suelo\"\n" +
             "\n" +
             "info:\n" +

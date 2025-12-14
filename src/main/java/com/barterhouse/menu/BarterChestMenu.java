@@ -66,6 +66,15 @@ public class BarterChestMenu extends ChestMenu {
                 player.closeContainer();
                 player.getServer().execute(() -> BarterUIManager.openOffersListGUI(player));
                 return; // Cancelar el click
+            } else if (slotId < 36) {
+                // Click en una oferta (primeras 4 filas) para eliminar
+                ItemStack clickedItem = this.getSlot(slotId).getItem();
+                if (!clickedItem.isEmpty()) {
+                    LoggerUtil.info("Player clicked on offer to delete at slot " + slotId);
+                    player.closeContainer();
+                    player.getServer().execute(() -> openDeleteConfirmationMenu((ServerPlayer) player, slotId));
+                    return; // Cancelar click
+                }
             }
         } else if (menuType.equals("create")) {
             if (slotId == 18) {
@@ -111,6 +120,23 @@ public class BarterChestMenu extends ChestMenu {
                 player.closeContainer();
                 com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
                 player.getServer().execute(() -> BarterUIManager.openOffersListGUI(player));
+                return;
+            }
+            // Bloquear otros clicks
+            return;
+        } else if (menuType.equals("confirm_delete")) {
+            if (slotId == 10) {
+                // Botón Confirmar eliminación (SÍ)
+                LoggerUtil.info("Player confirmed deletion");
+                player.closeContainer();
+                player.getServer().execute(() -> deleteOffer((ServerPlayer) player));
+                return;
+            } else if (slotId == 16) {
+                // Botón Cancelar eliminación (NO)
+                LoggerUtil.info("Player cancelled deletion");
+                player.closeContainer();
+                com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
+                player.getServer().execute(() -> BarterUIManager.openDeleteMyOffersGUI(player));
                 return;
             }
             // Bloquear otros clicks
@@ -457,6 +483,131 @@ public class BarterChestMenu extends ChestMenu {
             e.printStackTrace();
             MessageConfig configErr = MessageConfig.getInstance();
             player.displayClientMessage(Component.literal(configErr.get("errors.accept_error")), true);
+        }
+    }
+    
+    /**
+     * Abre el menú de confirmación para eliminar una oferta
+     */
+    private void openDeleteConfirmationMenu(ServerPlayer player, int slotId) {
+        try {
+            MessageConfig config = MessageConfig.getInstance();
+            
+            // Obtener todas las ofertas del jugador
+            java.util.List<com.barterhouse.api.TradeOffer> myOffers = 
+                com.barterhouse.manager.TradeOfferManager.getInstance()
+                    .getPlayerOffers(player.getUUID());
+            
+            if (slotId >= myOffers.size()) {
+                player.displayClientMessage(Component.literal(config.get("errors.offer_not_found")), true);
+                return;
+            }
+            
+            // Obtener la oferta específica
+            com.barterhouse.api.TradeOffer selectedOffer = myOffers.get(slotId);
+            
+            // Guardar la oferta para cuando el jugador confirme
+            com.barterhouse.event.SignEditHandler.setSelectedOffer(player.getUUID(), selectedOffer);
+            
+            // Crear el menú de confirmación (2 filas)
+            net.minecraft.world.SimpleContainer container = new net.minecraft.world.SimpleContainer(18);
+            
+            // Fila 1: Mostrar la oferta
+            // Slot 3: Item ofrecido
+            container.setItem(3, selectedOffer.getOfferedItem().copy());
+            
+            // Slot 4: Flecha (indica intercambio)
+            ItemStack arrow = new ItemStack(Items.ARROW);
+            arrow.setHoverName(Component.literal("§7Intercambio"));
+            container.setItem(4, arrow);
+            
+            // Slot 5: Item solicitado
+            container.setItem(5, selectedOffer.getRequestedItem().copy());
+            
+            // Fila 2: Botones de confirmación
+            // Slot 10: Confirmar SÍ (bloque verde)
+            ItemStack confirmButton = new ItemStack(Items.LIME_CONCRETE);
+            confirmButton.setHoverName(Component.literal(config.get("buttons.confirm_yes")));
+            container.setItem(10, confirmButton);
+            
+            // Slot 16: Cancelar NO (bloque rojo)
+            ItemStack cancelButton = new ItemStack(Items.RED_CONCRETE);
+            cancelButton.setHoverName(Component.literal(config.get("buttons.confirm_no")));
+            container.setItem(16, cancelButton);
+            
+            // Abrir el menú
+            player.openMenu(new net.minecraft.world.SimpleMenuProvider(
+                (windowId, playerInventory, p) -> new BarterChestMenu(
+                    MenuType.GENERIC_9x2, 
+                    windowId, 
+                    playerInventory, 
+                    container, 
+                    2, 
+                    player,
+                    "confirm_delete"
+                ),
+                Component.literal(config.get("menu.confirm_delete_title"))
+            ));
+            
+        } catch (Exception e) {
+            LoggerUtil.error("Error opening delete confirmation menu: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Elimina una oferta y devuelve el item al jugador
+     */
+    private void deleteOffer(ServerPlayer player) {
+        try {
+            MessageConfig config = MessageConfig.getInstance();
+            
+            // Obtener la oferta guardada
+            com.barterhouse.api.TradeOffer offer = com.barterhouse.event.SignEditHandler.getSelectedOffer(player.getUUID());
+            
+            if (offer == null) {
+                player.displayClientMessage(Component.literal(config.get("errors.offer_not_found")), true);
+                BarterUIManager.openDeleteMyOffersGUI(player);
+                return;
+            }
+            
+            // Verificar que el jugador es el dueño de la oferta
+            if (!offer.getCreatorUUID().equals(player.getUUID())) {
+                player.displayClientMessage(Component.literal(config.get("errors.not_owner")), true);
+                BarterUIManager.openDeleteMyOffersGUI(player);
+                return;
+            }
+            
+            // Devolver el item ofrecido al jugador
+            ItemStack offeredItem = offer.getOfferedItem().copy();
+            boolean added = player.addItem(offeredItem);
+            
+            if (!added) {
+                // Si el inventario está lleno, dropear el item
+                player.drop(offeredItem, false);
+                player.sendSystemMessage(Component.literal(config.get("success.inventory_full")));
+            }
+            
+            // Eliminar la oferta del sistema
+            com.barterhouse.manager.TradeOfferManager.getInstance().removeOffer(offer.getOfferId());
+            
+            // Limpiar la oferta guardada
+            com.barterhouse.event.SignEditHandler.clearSelectedOffer(player.getUUID());
+            
+            // Mensaje de confirmación
+            player.sendSystemMessage(Component.literal(config.get("success.offer_deleted")));
+            player.sendSystemMessage(Component.literal(config.get("success.item_returned", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
+            
+            LoggerUtil.info("Offer " + offer.getOfferId() + " deleted by player " + player.getName().getString());
+            
+            // Volver al menú de eliminar
+            BarterUIManager.openDeleteMyOffersGUI(player);
+            
+        } catch (Exception e) {
+            LoggerUtil.error("Error deleting offer: " + e.getMessage());
+            e.printStackTrace();
+            MessageConfig configErr = MessageConfig.getInstance();
+            player.displayClientMessage(Component.literal(configErr.get("errors.delete_error")), true);
         }
     }
 }
