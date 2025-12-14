@@ -74,15 +74,17 @@ public class MessageConfig {
             "  quantity_title: \"§7Selecciona la cantidad\"\n" +
             "  confirm_title: \"§7Confirmar Oferta\"\n" +
             "  confirm_delete_title: \"§c§l¿ELIMINAR OFERTA?\"\n" +
+            "  warehouse_title: \"§6Bodega\"\n" +
             "\n" +
             "buttons:\n" +
             "  create: \"§a§lCREAR\"\n" +
             "  delete: \"§c§lBORRAR\"\n" +
+            "  back: \"§e§lVOLVER\"\n" +
             "  accept: \"§a§lACEPTAR\"\n" +
             "  cancel: \"§c§lCANCELAR\"\n" +
-            "  back: \"§e§lVOLVER\"\n" +
             "  confirm_yes: \"§a§l✔ SÍ, ELIMINAR\"\n" +
             "  confirm_no: \"§c§l✖ NO, CANCELAR\"\n" +
+            "  warehouse: \"§6§lBodega\"\n" +
             "\n" +
             "errors:\n" +
             "  offer_not_found: \"§cOferta no encontrada\"\n" +
@@ -100,18 +102,21 @@ public class MessageConfig {
             "  accept_error: \"§cError al aceptar oferta\"\n" +
             "  delete_error: \"§cError al eliminar oferta\"\n" +
             "  not_owner: \"§c¡No eres el dueño de esta oferta!\"\n" +
+            "  cannot_accept_own_offer: \"§c§l¡No puedes aceptar tu propia oferta!\"\n" +
             "\n" +
             "success:\n" +
             "  offer_created: \"§a¡Oferta creada exitosamente!\"\n" +
             "  offer_accepted: \"§a§l¡Oferta aceptada!\"\n" +
             "  offer_received: \"§7Has recibido: §e{count}x {item}\"\n" +
+            "  offer_sent_to_warehouse: \"§7Enviado a bodega: §e{count}x {item}\"\n" +
             "  offer_deleted: \"§a¡Oferta eliminada!\"\n" +
             "  item_returned: \"§7Item devuelto: §e{count}x {item}\"\n" +
             "  inventory_full: \"§eInventario lleno, item dropeado en el suelo\"\n" +
             "\n" +
             "info:\n" +
             "  sign_editor_opened: \"§7Editor de letrero abierto. Escribe el nombre del item a buscar.\"\n" +
-            "  found_items: \"§7Se encontraron {count} items\"\n";
+            "  found_items: \"§7Se encontraron {count} items\"\n" +
+            "  warehouse_items: \"§7Items en bodega: {count}\"\n";
         
         Files.write(messagesFile, defaultYaml.getBytes(StandardCharsets.UTF_8));
     }

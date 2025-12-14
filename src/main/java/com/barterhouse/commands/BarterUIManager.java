@@ -65,6 +65,10 @@ public class BarterUIManager {
             deleteButton.setHoverName(Component.literal("§c§lBorrar Mis Ofertas"));
             container.setItem(46, deleteButton);
             
+            ItemStack warehouseButton = new ItemStack(Items.CHEST);
+            warehouseButton.setHoverName(Component.literal("§6§lBodega"));
+            container.setItem(47, warehouseButton);
+            
             // Marcar que este jugador tiene el menú de ofertas abierto
             playerMenus.put(player.getUUID(), "offers");
             
@@ -196,6 +200,76 @@ public class BarterUIManager {
     
     public static String getPlayerMenu(UUID playerUUID) {
         return playerMenus.getOrDefault(playerUUID, "");
+    }
+    
+    /**
+     * Abre la bodega del jugador (almacén de items recibidos)
+     */
+    public static void openWarehouseGUI(Player player) {
+        LoggerUtil.info("openWarehouseGUI called for player: " + player.getName().getString());
+        
+        if (!(player instanceof ServerPlayer)) {
+            return;
+        }
+        
+        try {
+            ServerPlayer serverPlayer = (ServerPlayer) player;
+            
+            // Crear un contenedor de cofre GRANDE (6 filas = 54 slots)
+            SimpleContainer container = new SimpleContainer(54);
+            
+            // Cargar items de la bodega
+            java.util.List<com.barterhouse.manager.WarehouseManager.StoredItem> warehouseItems = 
+                com.barterhouse.manager.WarehouseManager.getInstance().getPlayerWarehouse(player.getUUID());
+            
+            LoggerUtil.info("Loading " + warehouseItems.size() + " items from warehouse");
+            
+            // Llenar la bodega con los items (primeras 4 filas = slots 0-35)
+            int slot = 0;
+            for (com.barterhouse.manager.WarehouseManager.StoredItem storedItem : warehouseItems) {
+                if (slot >= 36) break;
+                
+                try {
+                    // Crear un ItemStack desde el nombre registrado
+                    net.minecraft.world.item.Item item = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                        .getValue(new net.minecraft.resources.ResourceLocation(storedItem.itemName));
+                    
+                    if (item != null) {
+                        ItemStack displayStack = new ItemStack(item, Math.min(storedItem.count, 64));
+                        
+                        // Mostrar información del item
+                        String displayName = "§e" + storedItem.count + "x §7" + item.getDescription().getString() +
+                                           "\n§7De: §6" + storedItem.sourcePlayer;
+                        displayStack.setHoverName(net.minecraft.network.chat.Component.literal(displayName));
+                        
+                        container.setItem(slot, displayStack);
+                        slot++;
+                    }
+                } catch (Exception e) {
+                    LoggerUtil.error("Error loading warehouse item: " + storedItem.itemName);
+                }
+            }
+            
+            // Fila 6 (slot 45): Botón Volver (Flecha)
+            ItemStack backButton = new ItemStack(Items.ARROW);
+            backButton.setHoverName(net.minecraft.network.chat.Component.literal("§e§lVOLVER"));
+            container.setItem(45, backButton);
+            
+            // Marcar que este jugador tiene el menú de bodega abierto
+            playerMenus.put(player.getUUID(), "warehouse");
+            
+            // Abrir menú con BarterChestMenu personalizado
+            serverPlayer.openMenu(new net.minecraft.world.SimpleMenuProvider(
+                (windowId, playerInventory, playerEntity) -> 
+                    new BarterChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x6, windowId, playerInventory, container, 6, serverPlayer, "warehouse"),
+                net.minecraft.network.chat.Component.literal("§7Bodega (" + warehouseItems.size() + " tipos de items)")
+            ));
+            
+            LoggerUtil.info("Warehouse menu opened successfully!");
+        } catch (Exception e) {
+            LoggerUtil.error("Error opening WarehouseGUI: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     public static void putPlayerMenu(UUID playerUUID, String menuType) {

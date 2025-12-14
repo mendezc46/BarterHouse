@@ -49,6 +49,12 @@ public class BarterChestMenu extends ChestMenu {
                 player.closeContainer();
                 player.getServer().execute(() -> BarterUIManager.openDeleteMyOffersGUI(player));
                 return; // Cancelar el click
+            } else if (slotId == 47) {
+                // Botón Bodega (Cofre)
+                LoggerUtil.info("Opening Warehouse menu");
+                player.closeContainer();
+                player.getServer().execute(() -> BarterUIManager.openWarehouseGUI(player));
+                return; // Cancelar el click
             } else if (slotId < 36) {
                 // Click en una oferta (primeras 4 filas)
                 ItemStack clickedItem = this.getSlot(slotId).getItem();
@@ -140,6 +146,16 @@ public class BarterChestMenu extends ChestMenu {
                 return;
             }
             // Bloquear otros clicks
+            return;
+        } else if (menuType.equals("warehouse")) {
+            if (slotId == 45) {
+                // Botón Volver (Flecha)
+                LoggerUtil.info("Going back to offers menu");
+                player.closeContainer();
+                player.getServer().execute(() -> BarterUIManager.openOffersListGUI(player));
+                return;
+            }
+            // Bloquear clicks en items de la bodega
             return;
         } else if (menuType.equals("search_results")) {
             // Click en el menú de resultados - abrir menú de cantidad
@@ -380,6 +396,13 @@ public class BarterChestMenu extends ChestMenu {
                 return;
             }
             
+            // Verificar que el jugador no es el creador de la oferta
+            if (offer.getCreatorUUID().equals(player.getUUID())) {
+                player.displayClientMessage(Component.literal(config.get("errors.cannot_accept_own_offer")), true);
+                BarterUIManager.openOffersListGUI(player);
+                return;
+            }
+            
             // Obtener el item que el jugador necesita tener
             ItemStack requiredItem = offer.getRequestedItem().copy();
             
@@ -453,15 +476,21 @@ public class BarterChestMenu extends ChestMenu {
                 remaining -= taken;
             }
             
-            // Dar el item ofrecido
+            // Agregar el item ofrecido a la BODEGA del comprador (NO al inventario)
             ItemStack offeredItem = offer.getOfferedItem().copy();
-            boolean added = player.addItem(offeredItem);
+            com.barterhouse.manager.WarehouseManager.getInstance().addItem(
+                player.getUUID(), 
+                offeredItem, 
+                offer.getCreatorName()
+            );
             
-            if (!added) {
-                // Si el inventario está lleno, dropear el item
-                player.drop(offeredItem, false);
-                player.sendSystemMessage(Component.literal(config.get("success.inventory_full")));
-            }
+            // Agregar el item solicitado (que el comprador dio) a la BODEGA del vendedor
+            ItemStack requestedItem = offer.getRequestedItem().copy();
+            com.barterhouse.manager.WarehouseManager.getInstance().addItem(
+                offer.getCreatorUUID(),
+                requestedItem,
+                player.getName().getString()
+            );
             
             // Registrar la transacción (marcar la oferta como aceptada o eliminarla)
             com.barterhouse.manager.TradeOfferManager.getInstance().removeOffer(offer.getOfferId());
@@ -471,7 +500,7 @@ public class BarterChestMenu extends ChestMenu {
             
             // Mensajes de confirmación
             player.sendSystemMessage(Component.literal(config.get("success.offer_accepted")));
-            player.sendSystemMessage(Component.literal(config.get("success.offer_received", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
+            player.sendSystemMessage(Component.literal(config.get("success.offer_sent_to_warehouse", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
             
             LoggerUtil.info("Offer " + offer.getOfferId() + " accepted by player " + player.getName().getString());
             

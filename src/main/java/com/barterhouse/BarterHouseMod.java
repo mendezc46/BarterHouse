@@ -3,6 +3,7 @@ package com.barterhouse;
 import com.barterhouse.commands.CommandRegistry;
 import com.barterhouse.config.MessageConfig;
 import com.barterhouse.manager.TradeOfferManager;
+import com.barterhouse.manager.WarehouseManager;
 import com.barterhouse.util.LoggerUtil;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
@@ -81,6 +82,10 @@ public class BarterHouseMod {
                 TradeOfferManager.getInstance().initializeWithLevel(overworld);
                 LoggerUtil.info("Trade offer manager initialized with " + 
                                TradeOfferManager.getInstance().getTotalActiveOffers() + " offers");
+                
+                // Inicializar WarehouseManager
+                WarehouseManager.getInstance().initializeWithLevel(overworld);
+                LoggerUtil.info("Warehouse manager initialized");
             } else {
                 LoggerUtil.error("Failed to get overworld level for manager initialization");
             }
