@@ -1,0 +1,36 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+.gradletasknamecache
+
+# Minecraft
+run/
+.mcreator/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Maven
+target/
+
+# Misc
+*.log
+*.swp
+*.swo
+*~

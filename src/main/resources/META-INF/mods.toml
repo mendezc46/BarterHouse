@@ -1,0 +1,29 @@
+modLoader="javafml"
+loaderVersion="43"
+license="MIT"
+issueTrackerURL="https://github.com/mendezc46/BarterHouse"
+
+[[mods]]
+modId="barterhouse"
+version="1.0.0"
+displayName="BarterHouse"
+description='''
+A server-side trading system mod for Minecraft. 
+Trade items with other players through an AuctionHouse-like interface.
+'''
+credits="Created by BarterHouse Team"
+authors="BarterHouse"
+
+[[dependencies.barterhouse]]
+    modId="forge"
+    mandatory=true
+    versionRange="[43,)"
+    ordering="NONE"
+    side="SERVER"
+
+[[dependencies.barterhouse]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.19.2]"
+    ordering="NONE"
+    side="SERVER"
