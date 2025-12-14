@@ -280,6 +280,53 @@ public class BarterChestMenu extends ChestMenu {
         super.clicked(slotId, button, clickType, player);
     }
     
+    @Override
+    public void removed(Player player) {
+        super.removed(player);
+        
+        // Cuando el menú se cierra, devolver items
+        if (menuType.equals("create")) {
+            // Slot 13 es donde el jugador pone el item a ofrecer
+            ItemStack itemInSlot = this.getSlot(13).getItem();
+            
+            if (!itemInSlot.isEmpty()) {
+                // Verificar si el item está guardado en memoria (está buscando un item solicitado)
+                ItemStack savedItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
+                
+                if (savedItem != null && !savedItem.isEmpty()) {
+                    // El jugador está en proceso de crear oferta (buscando item) → NO devolver
+                    LoggerUtil.info("Item kept in memory for player " + player.getName().getString() + " (searching for requested item)");
+                    this.getSlot(13).set(ItemStack.EMPTY);
+                    return;
+                }
+                
+                // Verificar si el jugador se está desconectando
+                if (com.barterhouse.event.PlayerDisconnectTracker.isDisconnecting(player.getUUID())) {
+                    // Jugador desconectado → Enviar a bodega
+                    com.barterhouse.manager.WarehouseManager.getInstance()
+                        .addItem(player.getUUID(), itemInSlot.copy(), "Sistema");
+                    LoggerUtil.info("Sent item from slot 13 to warehouse (disconnected) for player " + player.getName().getString());
+                } else {
+                    // Jugador conectado → Devolver al inventario
+                    if (!player.getInventory().add(itemInSlot.copy())) {
+                        // Si el inventario está lleno, dropear
+                        player.drop(itemInSlot, false);
+                    }
+                    LoggerUtil.info("Returned item from slot 13 to inventory for player " + player.getName().getString());
+                }
+                
+                // Limpiar el slot
+                this.getSlot(13).set(ItemStack.EMPTY);
+            }
+        }
+        
+        // Limpiar el item guardado en memoria solo si NO está buscando
+        ItemStack savedItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
+        if (savedItem == null || savedItem.isEmpty()) {
+            com.barterhouse.event.SignEditHandler.clearOfferedItem(player.getUUID());
+        }
+    }
+    
     private void createOffer(ServerPlayer player, ItemStack offeredItem, ItemStack requestedItem) {
         try {
             // Crear la oferta usando el manager
@@ -290,7 +337,7 @@ public class BarterChestMenu extends ChestMenu {
                 requestedItem.copy()
             );
             
-            // Limpiar el item guardado
+            // Limpiar el item guardado (memoria)
             com.barterhouse.event.SignEditHandler.clearOfferedItem(player.getUUID());
             
             // Mensaje de confirmación

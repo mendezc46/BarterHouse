@@ -114,7 +114,14 @@ public class BarterUIManager {
             
             // Fila 2: slots 12, [13 VACÍO], 14
             container.setItem(12, new ItemStack(Items.GLASS_PANE));
-            // Slot 13 = centro, vacío para poner el item a tradear
+            
+            // Slot 13 = centro, restaurar el item guardado si existe
+            ItemStack savedItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
+            if (savedItem != null && !savedItem.isEmpty()) {
+                container.setItem(13, savedItem.copy());
+                LoggerUtil.info("Restored offered item to slot 13 for player: " + player.getName().getString());
+            }
+            
             container.setItem(14, new ItemStack(Items.GLASS_PANE));
             
             // Fila 3: slots 21,22,23
