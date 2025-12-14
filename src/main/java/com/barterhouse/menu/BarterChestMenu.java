@@ -154,8 +154,17 @@ public class BarterChestMenu extends ChestMenu {
                 player.closeContainer();
                 player.getServer().execute(() -> BarterUIManager.openOffersListGUI(player));
                 return;
+            } else if (slotId < 36) {
+                // Click en un item de la bodega para sacarlo
+                ItemStack clickedItem = this.getSlot(slotId).getItem();
+                if (!clickedItem.isEmpty()) {
+                    LoggerUtil.info("Player withdrawing item from warehouse at slot " + slotId);
+                    player.closeContainer();
+                    player.getServer().execute(() -> withdrawFromWarehouse((ServerPlayer) player, slotId));
+                    return;
+                }
             }
-            // Bloquear clicks en items de la bodega
+            // Bloquear otros clicks
             return;
         } else if (menuType.equals("search_results")) {
             // Click en el menú de resultados - abrir menú de cantidad
@@ -234,7 +243,40 @@ public class BarterChestMenu extends ChestMenu {
             return;
         }
         
-        // Para cualquier otro slot, comportamiento normal
+        // Manejo de colocación de items:
+        // - Permitir slot -999 (dropear fuera del GUI)
+        // - Permitir inventario del jugador (slots >= 54)
+        // - Permitir slot 13 en menú "create"
+        // - Bloquear SOLO colocar items en slots del GUI (0-53)
+        
+        // Slot -999 es dropear item fuera del GUI - siempre permitir
+        if (slotId == -999) {
+            super.clicked(slotId, button, clickType, player);
+            return;
+        }
+        
+        // Inventario del jugador (slots >= 54) - siempre permitir todas las interacciones
+        if (slotId >= 54) {
+            super.clicked(slotId, button, clickType, player);
+            return;
+        }
+        
+        // Slot 13 del menú "create" - permitir colocar items
+        if (menuType.equals("create") && slotId == 13) {
+            super.clicked(slotId, button, clickType, player);
+            return;
+        }
+        
+        // Para slots del GUI (0-53): permitir sacar items, pero bloquear colocarlos
+        ItemStack cursorItem = this.getCarried();
+        
+        // Si el cursor tiene un item = intento de colocar → bloquear
+        // Si el cursor está vacío = intento de sacar → permitir
+        if (!cursorItem.isEmpty()) {
+            return; // Bloquear colocar items en slots del GUI
+        }
+        
+        // Permitir todo lo demás (sacar items, clicks con cursor vacío)
         super.clicked(slotId, button, clickType, player);
     }
     
@@ -607,15 +649,13 @@ public class BarterChestMenu extends ChestMenu {
                 return;
             }
             
-            // Devolver el item ofrecido al jugador
+            // Devolver el item ofrecido a la BODEGA del jugador (NO al inventario)
             ItemStack offeredItem = offer.getOfferedItem().copy();
-            boolean added = player.addItem(offeredItem);
-            
-            if (!added) {
-                // Si el inventario está lleno, dropear el item
-                player.drop(offeredItem, false);
-                player.sendSystemMessage(Component.literal(config.get("success.inventory_full")));
-            }
+            com.barterhouse.manager.WarehouseManager.getInstance().addItem(
+                player.getUUID(),
+                offeredItem,
+                "Sistema" // El sistema devuelve el item
+            );
             
             // Eliminar la oferta del sistema
             com.barterhouse.manager.TradeOfferManager.getInstance().removeOffer(offer.getOfferId());
@@ -625,7 +665,7 @@ public class BarterChestMenu extends ChestMenu {
             
             // Mensaje de confirmación
             player.sendSystemMessage(Component.literal(config.get("success.offer_deleted")));
-            player.sendSystemMessage(Component.literal(config.get("success.item_returned", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
+            player.sendSystemMessage(Component.literal(config.get("success.item_returned_to_warehouse", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
             
             LoggerUtil.info("Offer " + offer.getOfferId() + " deleted by player " + player.getName().getString());
             
@@ -637,6 +677,66 @@ public class BarterChestMenu extends ChestMenu {
             e.printStackTrace();
             MessageConfig configErr = MessageConfig.getInstance();
             player.displayClientMessage(Component.literal(configErr.get("errors.delete_error")), true);
+        }
+    }
+    
+    /**
+     * Retira un item de la bodega y lo da al jugador
+     */
+    private void withdrawFromWarehouse(ServerPlayer player, int slotId) {
+        try {
+            MessageConfig config = MessageConfig.getInstance();
+            
+            // Obtener items de la bodega
+            java.util.List<com.barterhouse.manager.WarehouseManager.StoredItem> warehouseItems = 
+                com.barterhouse.manager.WarehouseManager.getInstance().getPlayerWarehouse(player.getUUID());
+            
+            if (slotId >= warehouseItems.size()) {
+                player.displayClientMessage(Component.literal(config.get("errors.warehouse_item_not_found")), true);
+                BarterUIManager.openWarehouseGUI(player);
+                return;
+            }
+            
+            // Obtener el item
+            com.barterhouse.manager.WarehouseManager.StoredItem storedItem = warehouseItems.get(slotId);
+            
+            // Crear el ItemStack
+            net.minecraft.world.item.Item item = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                .getValue(new net.minecraft.resources.ResourceLocation(storedItem.itemName));
+            
+            if (item == null) {
+                player.displayClientMessage(Component.literal(config.get("errors.warehouse_item_error")), true);
+                BarterUIManager.openWarehouseGUI(player);
+                return;
+            }
+            
+            ItemStack itemStack = new ItemStack(item, storedItem.count);
+            
+            // Dar el item al jugador
+            boolean added = player.addItem(itemStack);
+            
+            if (!added) {
+                // Si el inventario está lleno, dropear el item
+                player.drop(itemStack, false);
+                player.sendSystemMessage(Component.literal(config.get("success.inventory_full")));
+            }
+            
+            // Remover el item de la bodega
+            com.barterhouse.manager.WarehouseManager.getInstance().removeItem(player.getUUID(), slotId);
+            
+            // Mensaje de confirmación
+            player.sendSystemMessage(Component.literal(config.get("success.warehouse_withdrawn", "count", storedItem.count, "item", item.getDescription().getString())));
+            
+            LoggerUtil.info("Player " + player.getName().getString() + " withdrew " + storedItem.count + "x " + storedItem.itemName + " from warehouse");
+            
+            // Volver a la bodega
+            BarterUIManager.openWarehouseGUI(player);
+            
+        } catch (Exception e) {
+            LoggerUtil.error("Error withdrawing from warehouse: " + e.getMessage());
+            e.printStackTrace();
+            MessageConfig configErr = MessageConfig.getInstance();
+            player.displayClientMessage(Component.literal(configErr.get("errors.warehouse_error")), true);
         }
     }
 }

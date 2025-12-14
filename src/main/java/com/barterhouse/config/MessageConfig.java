@@ -103,6 +103,9 @@ public class MessageConfig {
             "  delete_error: \"§cError al eliminar oferta\"\n" +
             "  not_owner: \"§c¡No eres el dueño de esta oferta!\"\n" +
             "  cannot_accept_own_offer: \"§c§l¡No puedes aceptar tu propia oferta!\"\n" +
+            "  warehouse_item_not_found: \"§cItem no encontrado en bodega\"\n" +
+            "  warehouse_item_error: \"§cError al cargar item de bodega\"\n" +
+            "  warehouse_error: \"§cError al retirar de bodega\"\n" +
             "\n" +
             "success:\n" +
             "  offer_created: \"§a¡Oferta creada exitosamente!\"\n" +
@@ -111,7 +114,9 @@ public class MessageConfig {
             "  offer_sent_to_warehouse: \"§7Enviado a bodega: §e{count}x {item}\"\n" +
             "  offer_deleted: \"§a¡Oferta eliminada!\"\n" +
             "  item_returned: \"§7Item devuelto: §e{count}x {item}\"\n" +
+            "  item_returned_to_warehouse: \"§7Item devuelto a bodega: §e{count}x {item}\"\n" +
             "  inventory_full: \"§eInventario lleno, item dropeado en el suelo\"\n" +
+            "  warehouse_withdrawn: \"§aRetiraste: §e{count}x {item}\"\n" +
             "\n" +
             "info:\n" +
             "  sign_editor_opened: \"§7Editor de letrero abierto. Escribe el nombre del item a buscar.\"\n" +
