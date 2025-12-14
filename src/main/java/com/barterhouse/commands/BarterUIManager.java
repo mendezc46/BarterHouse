@@ -25,6 +25,18 @@ public class BarterUIManager {
     private static final HashMap<UUID, String> playerMenus = new HashMap<>();
 
     /**
+     * Obtiene la cantidad real de un ItemStack, considerando el NBT ActualCount si existe
+     * @param stack El ItemStack a verificar
+     * @return La cantidad real (puede ser > 64)
+     */
+    private static int getActualCount(ItemStack stack) {
+        if (stack.hasTag() && stack.getTag().contains("ActualCount")) {
+            return stack.getTag().getInt("ActualCount");
+        }
+        return stack.getCount();
+    }
+
+    /**
      * Abre un menú de cofre con la lista de ofertas
      */
     public static void openOffersListGUI(Player player) {
@@ -52,6 +64,16 @@ public class BarterUIManager {
                 
                 ItemStack displayStack = offer.getOfferedItem().copy();
                 displayStack.setCount(1);
+                
+                // Crear información detallada del hover
+                StringBuilder hoverText = new StringBuilder();
+                hoverText.append("§e§l").append(displayStack.getDisplayName().getString()).append("\n");
+                hoverText.append("§7Creador: §f").append(offer.getCreatorName()).append("\n");
+                hoverText.append("§7Ofrece: §e").append(getActualCount(offer.getOfferedItem())).append("x ").append(offer.getOfferedItem().getDisplayName().getString()).append("\n");
+                hoverText.append("§7Pide: §e").append(getActualCount(offer.getRequestedItem())).append("x ").append(offer.getRequestedItem().getDisplayName().getString()).append("\n");
+                hoverText.append("§8Haz click para más detalles");
+                
+                displayStack.setHoverName(Component.literal(hoverText.toString()));
                 container.setItem(slot, displayStack);
                 slot++;
             }

@@ -5,6 +5,7 @@ import com.barterhouse.util.LoggerUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.TickEvent;
 
@@ -236,9 +237,23 @@ public class TradeOfferManager {
                 json.append("      \"creatorUUID\": \"").append(offer.getCreatorUUID()).append("\",\n");
                 json.append("      \"creatorName\": \"").append(offer.getCreatorName()).append("\",\n");
                 json.append("      \"offeredItem\": \"").append(offer.getOfferedItem().getItem().toString()).append("\",\n");
-                json.append("      \"offeredCount\": ").append(offer.getOfferedItem().getCount()).append(",\n");
+                
+                // Para offeredItem, primero verificar si tiene ActualCount en NBT
+                ItemStack offeredStack = offer.getOfferedItem();
+                int offeredCount = offeredStack.hasTag() && offeredStack.getTag().contains("ActualCount") 
+                    ? offeredStack.getTag().getInt("ActualCount") 
+                    : offeredStack.getCount();
+                json.append("      \"offeredCount\": ").append(offeredCount).append(",\n");
+                
                 json.append("      \"requestedItem\": \"").append(offer.getRequestedItem().getItem().toString()).append("\",\n");
-                json.append("      \"requestedCount\": ").append(offer.getRequestedItem().getCount()).append(",\n");
+                
+                // Para requestedItem, primero verificar si tiene ActualCount en NBT
+                ItemStack requestedStack = offer.getRequestedItem();
+                int requestedCount = requestedStack.hasTag() && requestedStack.getTag().contains("ActualCount") 
+                    ? requestedStack.getTag().getInt("ActualCount") 
+                    : requestedStack.getCount();
+                json.append("      \"requestedCount\": ").append(requestedCount).append(",\n");
+                
                 json.append("      \"createdTime\": ").append(offer.getCreatedTime()).append("\n");
                 json.append("    }");
                 if (i < offersList.size() - 1) {

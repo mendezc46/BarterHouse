@@ -16,6 +16,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
 
 import java.util.UUID;
+import java.util.HashMap;
 
 /**
  * ChestMenu personalizado que detecta clicks en botones - SERVER SIDE ONLY
@@ -24,6 +25,21 @@ public class BarterChestMenu extends ChestMenu {
     
     private final String menuType;
     private final ServerPlayer player;
+    
+    // HashMap para guardar cantidades mayores a 64 de jugadores
+    private static final HashMap<UUID, Integer> playerQuantities = new HashMap<>();
+    
+    /**
+     * Obtiene la cantidad real de un ItemStack, considerando el NBT ActualCount si existe
+     * @param stack El ItemStack a verificar
+     * @return La cantidad real (puede ser > 64)
+     */
+    private static int getActualCount(ItemStack stack) {
+        if (stack.hasTag() && stack.getTag().contains("ActualCount")) {
+            return stack.getTag().getInt("ActualCount");
+        }
+        return stack.getCount();
+    }
     
     public BarterChestMenu(MenuType<?> menuType, int windowId, Inventory playerInventory, Container container, int rows, ServerPlayer player, String menuTypeStr) {
         super(menuType, windowId, playerInventory, container, rows);
@@ -185,31 +201,50 @@ public class BarterChestMenu extends ChestMenu {
             serverPlayer.getServer().execute(() -> openQuantitySelectionMenu(serverPlayer, clickedItem));
             return; // Cancelar click
         } else if (menuType.equals("quantity_selection")) {
-            // Click en menú de selección de cantidad
-            // Los slots 0-8 representan cantidades 1-9
-            // Slot 9 es cancelar
+            // Click en menú de selección de cantidad con botones rápidos +/-
+            ItemStack quantityItem = this.getSlot(4).getItem();
             
-            ItemStack clickedItem = this.getSlot(slotId).getItem();
+            // Obtener la cantidad actual del HashMap
+            int currentQuantity = playerQuantities.getOrDefault(player.getUUID(), 1);
             
-            if (clickedItem.isEmpty()) {
-                return;
+            // Botones de disminuir: slots 0, 1, 2 (-1, -10, -30)
+            if (slotId == 0) {
+                // -1
+                if (currentQuantity > 1) {
+                    currentQuantity--;
+                }
+                LoggerUtil.info("Player decreased quantity by 1: " + currentQuantity);
+            } else if (slotId == 1) {
+                // -10
+                currentQuantity = Math.max(1, currentQuantity - 10);
+                LoggerUtil.info("Player decreased quantity by 10: " + currentQuantity);
+            } else if (slotId == 2) {
+                // -30
+                currentQuantity = Math.max(1, currentQuantity - 30);
+                LoggerUtil.info("Player decreased quantity by 30: " + currentQuantity);
             }
-            
-            if (slotId == 9) {
-                // Botón Cancelar
-                LoggerUtil.info("Player cancelled quantity selection");
-                player.closeContainer();
-                ServerPlayer serverPlayer = (ServerPlayer) player;
-                com.barterhouse.event.SignEditHandler.clearSelectedSearchItem(player.getUUID());
-                serverPlayer.getServer().execute(() -> BarterUIManager.openCreateOfferGUI(serverPlayer));
-                return;
+            // Botones de aumentar: slots 6, 7, 8 (+1, +10, +30)
+            else if (slotId == 6) {
+                // +1
+                if (currentQuantity < 999) {
+                    currentQuantity++;
+                }
+                LoggerUtil.info("Player increased quantity by 1: " + currentQuantity);
+            } else if (slotId == 7) {
+                // +10
+                currentQuantity = Math.min(999, currentQuantity + 10);
+                LoggerUtil.info("Player increased quantity by 10: " + currentQuantity);
+            } else if (slotId == 8) {
+                // +30
+                currentQuantity = Math.min(999, currentQuantity + 30);
+                LoggerUtil.info("Player increased quantity by 30: " + currentQuantity);
             }
-            
-            if (slotId >= 0 && slotId <= 8) {
-                // Cantidad seleccionada (slot 0 = 1, slot 1 = 2, ... slot 8 = 9)
-                int quantity = slotId + 1;
+            // Botón Confirmar: slot 13
+            else if (slotId == 13) {
+                // Obtener la cantidad real del HashMap
+                int quantity = playerQuantities.getOrDefault(player.getUUID(), 1);
                 
-                LoggerUtil.info("Player selected quantity: " + quantity);
+                LoggerUtil.info("Player confirmed quantity: " + quantity);
                 
                 // Obtener el item ofrecido guardado
                 ItemStack offeredItem = com.barterhouse.event.SignEditHandler.getOfferedItem(player.getUUID());
@@ -217,6 +252,7 @@ public class BarterChestMenu extends ChestMenu {
                 if (offeredItem == null || offeredItem.isEmpty()) {
                     player.displayClientMessage(Component.literal(MessageConfig.getInstance().get("errors.offered_item_error")), true);
                     player.closeContainer();
+                    playerQuantities.remove(player.getUUID());
                     return;
                 }
                 
@@ -226,18 +262,44 @@ public class BarterChestMenu extends ChestMenu {
                 if (requestedItem == null || requestedItem.isEmpty()) {
                     player.displayClientMessage(Component.literal(MessageConfig.getInstance().get("errors.requested_item_error")), true);
                     player.closeContainer();
+                    playerQuantities.remove(player.getUUID());
                     return;
                 }
                 
-                // Establecer la cantidad del item solicitado
-                requestedItem.setCount(quantity);
+                // Guardar la cantidad real en el NBT del item (para cantidades > 64)
+                requestedItem.setCount(Math.min(64, quantity));
+                
+                // Guardar la cantidad real en NBT para persistencia
+                net.minecraft.nbt.CompoundTag nbt = requestedItem.getOrCreateTag();
+                nbt.putInt("ActualCount", quantity);
                 
                 // Crear la oferta
                 player.closeContainer();
                 ServerPlayer serverPlayer = (ServerPlayer) player;
                 serverPlayer.getServer().execute(() -> createOffer(serverPlayer, offeredItem, requestedItem));
                 com.barterhouse.event.SignEditHandler.clearSelectedSearchItem(player.getUUID());
+                playerQuantities.remove(player.getUUID());
                 return;
+            }
+            // Botón Cancelar: slot 21
+            else if (slotId == 21) {
+                LoggerUtil.info("Player cancelled quantity selection");
+                player.closeContainer();
+                ServerPlayer serverPlayer = (ServerPlayer) player;
+                com.barterhouse.event.SignEditHandler.clearSelectedSearchItem(player.getUUID());
+                playerQuantities.remove(player.getUUID());
+                serverPlayer.getServer().execute(() -> BarterUIManager.openCreateOfferGUI(serverPlayer));
+                return;
+            }
+            
+            // Actualizar el item en el slot 4 con la nueva cantidad
+            if (slotId >= 0 && slotId <= 8) {
+                // Guardar la cantidad en el HashMap
+                playerQuantities.put(player.getUUID(), currentQuantity);
+                
+                // Mantener el item visual en 1 para evitar que desaparezca
+                quantityItem.setCount(1);
+                quantityItem.setHoverName(Component.literal("§e§lCantidad: §f" + currentQuantity + "x\n§7Cantidad actual solicitada"));
             }
             
             return;
@@ -283,6 +345,9 @@ public class BarterChestMenu extends ChestMenu {
     @Override
     public void removed(Player player) {
         super.removed(player);
+        
+        // Limpiar HashMap de cantidades
+        playerQuantities.remove(player.getUUID());
         
         // Cuando el menú se cierra, devolver items
         if (menuType.equals("create")) {
@@ -342,8 +407,8 @@ public class BarterChestMenu extends ChestMenu {
             
             // Mensaje de confirmación
             player.displayClientMessage(Component.literal("§a¡Oferta creada exitosamente!"), false);
-            player.displayClientMessage(Component.literal("§7Ofreces: §e" + offeredItem.getCount() + "x " + offeredItem.getDisplayName().getString()), false);
-            player.displayClientMessage(Component.literal("§7Pides: §e" + requestedItem.getCount() + "x " + requestedItem.getDisplayName().getString()), false);
+            player.displayClientMessage(Component.literal("§7Ofreces: §e" + getActualCount(offeredItem) + "x " + offeredItem.getDisplayName().getString()), false);
+            player.displayClientMessage(Component.literal("§7Pides: §e" + getActualCount(requestedItem) + "x " + requestedItem.getDisplayName().getString()), false);
             
             LoggerUtil.info("Offer created successfully for player " + player.getName().getString() + " with ID: " + offerId);
             
@@ -380,35 +445,72 @@ public class BarterChestMenu extends ChestMenu {
     }
     
     private void openQuantitySelectionMenu(ServerPlayer player, ItemStack selectedItem) {
-        // Crear menú de 1 fila (9 slots) para seleccionar cantidad 1-9
-        net.minecraft.world.SimpleContainer container = new net.minecraft.world.SimpleContainer(18);
+        // Crear menú de 3 filas (27 slots) para seleccionar cantidad con botones rápidos
+        net.minecraft.world.SimpleContainer container = new net.minecraft.world.SimpleContainer(27);
         
         MessageConfig config = MessageConfig.getInstance();
         
-        // Slots 0-8: cantidades 1-9
-        for (int i = 0; i < 9; i++) {
-            ItemStack quantityButton = new ItemStack(Items.WHITE_CONCRETE);
-            int quantity = i + 1;
-            quantityButton.setCount(quantity);
-            quantityButton.setHoverName(Component.literal("§e§lCantidad: " + quantity + "x"));
-            container.setItem(i, quantityButton);
-        }
+        // Cantidad inicial: 1
+        int initialQuantity = 1;
         
-        // Slot 9: Botón Cancelar
-        ItemStack cancelButton = new ItemStack(Items.RED_CONCRETE);
+        // Guardar la cantidad en el HashMap del jugador
+        playerQuantities.put(player.getUUID(), initialQuantity);
+        
+        // Fila 1: Botones de disminuir (-1, -10, -30) en slots 0, 1, 2
+        ItemStack decreaseOne = new ItemStack(Items.RED_CONCRETE);
+        decreaseOne.setHoverName(Component.literal("§c§l- 1"));
+        container.setItem(0, decreaseOne);
+        
+        ItemStack decreaseTen = new ItemStack(Items.ORANGE_CONCRETE);
+        decreaseTen.setHoverName(Component.literal("§6§l- 10"));
+        container.setItem(1, decreaseTen);
+        
+        ItemStack decreaseThirty = new ItemStack(Items.YELLOW_CONCRETE);
+        decreaseThirty.setHoverName(Component.literal("§e§l- 30"));
+        container.setItem(2, decreaseThirty);
+        
+        // Fila 1: Item con cantidad en slot 4 (centro)
+        ItemStack displayItem = selectedItem.copy();
+        displayItem.setCount(1); // Siempre mostrar 1 visualmente
+        displayItem.setHoverName(Component.literal("§e§lCantidad: §f" + initialQuantity + "x\n§7Cantidad actual solicitada"));
+        container.setItem(4, displayItem);
+        
+        // Fila 1: Botones de aumentar (+1, +10, +30) en slots 6, 7, 8
+        ItemStack increaseOne = new ItemStack(Items.LIME_CONCRETE);
+        increaseOne.setHoverName(Component.literal("§a§l+ 1"));
+        container.setItem(6, increaseOne);
+        
+        ItemStack increaseTen = new ItemStack(Items.GREEN_CONCRETE);
+        increaseTen.setHoverName(Component.literal("§2§l+ 10"));
+        container.setItem(7, increaseTen);
+        
+        ItemStack increaseThirty = new ItemStack(Items.LIME_STAINED_GLASS);
+        increaseThirty.setHoverName(Component.literal("§0§l+ 30"));
+        container.setItem(8, increaseThirty);
+        
+        // Fila 2: Botón Confirmar en slot 13 (centro)
+        ItemStack confirmButton = new ItemStack(Items.EMERALD);
+        confirmButton.setHoverName(Component.literal("§a§lConfirmar Cantidad"));
+        container.setItem(13, confirmButton);
+        
+        // Fila 3: Botón Cancelar en slot 21
+        ItemStack cancelButton = new ItemStack(Items.BARRIER);
         cancelButton.setHoverName(Component.literal(config.get("buttons.cancel")));
-        container.setItem(9, cancelButton);
+        container.setItem(21, cancelButton);
+        
+        // Guardar el item seleccionado
+        com.barterhouse.event.SignEditHandler.setSelectedSearchItem(player.getUUID(), selectedItem.copy());
         
         BarterUIManager.putPlayerMenu(player.getUUID(), "quantity_selection");
         
         player.openMenu(new net.minecraft.world.SimpleMenuProvider(
             (windowId, playerInventory, playerEntity) -> 
                 new BarterChestMenu(
-                    net.minecraft.world.inventory.MenuType.GENERIC_9x2,
+                    net.minecraft.world.inventory.MenuType.GENERIC_9x3,
                     windowId,
                     playerInventory,
                     container,
-                    2,
+                    3,
                     player,
                     "quantity_selection"
                 ),
@@ -439,10 +541,20 @@ public class BarterChestMenu extends ChestMenu {
         // Información sobre lo que obtendrás
         ItemStack offeredItemDisplay = offer.getOfferedItem().copy();
         offeredItemDisplay.setCount(1);
+        StringBuilder offeredHover = new StringBuilder();
+        offeredHover.append("§e§lRECIBES:\\n");
+        offeredHover.append("§7Cantidad: §e").append(getActualCount(offer.getOfferedItem())).append("x\\n");
+        offeredHover.append("§7Item: §e").append(offer.getOfferedItem().getDisplayName().getString());
+        offeredItemDisplay.setHoverName(Component.literal(offeredHover.toString()));
         container.setItem(3, offeredItemDisplay);
         
         ItemStack requestedItemDisplay = offer.getRequestedItem().copy();
         requestedItemDisplay.setCount(1);
+        StringBuilder requestedHover = new StringBuilder();
+        requestedHover.append("§c§lNECESITAS:\\n");
+        requestedHover.append("§7Cantidad: §c").append(getActualCount(offer.getRequestedItem())).append("x\\n");
+        requestedHover.append("§7Item: §c").append(offer.getRequestedItem().getDisplayName().getString());
+        requestedItemDisplay.setHoverName(Component.literal(requestedHover.toString()));
         container.setItem(5, requestedItemDisplay);
         
         // Botón Aceptar (Verde)
@@ -509,7 +621,7 @@ public class BarterChestMenu extends ChestMenu {
                 itemCount += cursorItem.getCount();
             }
             
-            int required = requiredItem.getCount();
+            int required = getActualCount(requiredItem);
             
             if (itemCount < required) {
                 // Cerrar menú primero
@@ -547,7 +659,7 @@ public class BarterChestMenu extends ChestMenu {
             
             // Remover el item requerido del inventario
             ItemStack toRemove = requiredItem.copy();
-            int remaining = toRemove.getCount();
+            int remaining = getActualCount(requiredItem);
             
             for (int i = 0; i < player.getInventory().items.size() && remaining > 0; i++) {
                 ItemStack stack = player.getInventory().items.get(i);
@@ -589,7 +701,7 @@ public class BarterChestMenu extends ChestMenu {
             
             // Mensajes de confirmación
             player.sendSystemMessage(Component.literal(config.get("success.offer_accepted")));
-            player.sendSystemMessage(Component.literal(config.get("success.offer_sent_to_warehouse", "count", offeredItem.getCount(), "item", offeredItem.getDisplayName().getString())));
+            player.sendSystemMessage(Component.literal(config.get("success.offer_sent_to_warehouse", "count", getActualCount(offeredItem), "item", offeredItem.getDisplayName().getString())));
             
             LoggerUtil.info("Offer " + offer.getOfferId() + " accepted by player " + player.getName().getString());
             
