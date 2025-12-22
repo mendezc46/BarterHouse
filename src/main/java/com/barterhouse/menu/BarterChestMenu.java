@@ -15,6 +15,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
 
+import java.io.File;
 import java.util.UUID;
 import java.util.HashMap;
 
@@ -411,6 +412,9 @@ public class BarterChestMenu extends ChestMenu {
             player.displayClientMessage(Component.literal("§7Pides: §e" + getActualCount(requestedItem) + "x " + requestedItem.getDisplayName().getString()), false);
             
             LoggerUtil.info("Offer created successfully for player " + player.getName().getString() + " with ID: " + offerId);
+            
+            // Enviar notificación a Discord (asíncrono para no bloquear el servidor)
+            sendDiscordNotification(player, offeredItem, requestedItem);
             
             // Volver al menú principal
             BarterUIManager.openOffersListGUI(player);
@@ -897,5 +901,61 @@ public class BarterChestMenu extends ChestMenu {
             MessageConfig configErr = MessageConfig.getInstance();
             player.displayClientMessage(Component.literal(configErr.get("errors.warehouse_error")), true);
         }
+    }
+    
+    /**
+     * Envía notificación de Discord cuando se crea una oferta
+     */
+    private void sendDiscordNotification(ServerPlayer player, ItemStack offeredItem, ItemStack requestedItem) {
+        // Ejecutar en un thread separado para no bloquear el servidor
+        new Thread(() -> {
+            try {
+                com.barterhouse.config.DiscordConfig discordConfig = com.barterhouse.config.DiscordConfig.getInstance();
+                
+                if (!discordConfig.isEnabled()) {
+                    LoggerUtil.info("Discord notifications are disabled");
+                    return;
+                }
+                
+                // Obtener la oferta que acabamos de crear
+                java.util.List<com.barterhouse.api.TradeOffer> offers = 
+                    com.barterhouse.manager.TradeOfferManager.getInstance().getPlayerOffers(player.getUUID());
+                
+                if (offers.isEmpty()) {
+                    LoggerUtil.warn("Could not find created offer for Discord notification");
+                    return;
+                }
+                
+                com.barterhouse.api.TradeOffer offer = offers.get(offers.size() - 1);
+                
+                // Generar la imagen
+                File tempDir = new File(player.getServer().getServerDirectory(), "barterhouse/temp");
+                tempDir.mkdirs();
+                
+                File imageFile = new File(tempDir, "offer_" + System.currentTimeMillis() + ".png");
+                
+                com.barterhouse.discord.OfferImageGenerator.generateOfferImage(offer, imageFile);
+                
+                if (imageFile.exists()) {
+                    // Enviar al webhook
+                    com.barterhouse.discord.DiscordWebhook webhook = 
+                        new com.barterhouse.discord.DiscordWebhook(discordConfig.getWebhookUrl());
+                    
+                    String message = "🔔 **Nueva oferta creada en BarterHouse**\n" +
+                                   "Jugador: **" + player.getName().getString() + "**";
+                    
+                    webhook.sendImageWithMessage(imageFile, message);
+                    
+                    // Eliminar archivo temporal
+                    imageFile.delete();
+                } else {
+                    LoggerUtil.error("Failed to generate offer image");
+                }
+                
+            } catch (Exception e) {
+                LoggerUtil.error("Error sending Discord notification: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }).start();
     }
 }

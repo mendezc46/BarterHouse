@@ -78,6 +78,9 @@ public class BarterHouseMod {
                 // Inicializar MessageConfig
                 MessageConfig.getInstance().initializeWithLevel(overworld);
                 
+                // Inicializar DiscordConfig
+                com.barterhouse.config.DiscordConfig.getInstance().initializeWithLevel(overworld);
+                
                 // Inicializar TradeOfferManager
                 TradeOfferManager.getInstance().initializeWithLevel(overworld);
                 LoggerUtil.info("Trade offer manager initialized with " + 
